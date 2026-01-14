@@ -19,6 +19,7 @@
 body {
   font-family: 'Inter', sans-serif;
   background-color: #f7f7f7;
+  overflow-x: hidden;
 }
 
 /* 4. Custom Navigation Style */
@@ -35,6 +36,7 @@ body {
   /* Enable Flexbox on the vertical axis */
   display: flex;
   flex-direction: column;
+  overflow-x: hidden;
 }
 
 /* Ensure the main content area expands to push the footer down */

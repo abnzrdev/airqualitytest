@@ -1,8 +1,7 @@
-import { useCallback, useState, useEffect, useRef } from 'react';
-import { GoogleMap, InfoWindow } from '@react-google-maps/api';
+import { useCallback, useState, useEffect, lazy, Suspense } from 'react';
+import { t } from '../i18n';
 
-// --- Конфигурация ---
-const defaultCenter = { lat: 43.2567, lng: 76.9286 };
+const AirQualityMap = lazy(() => import('./air-quality-map'));
 
 // --- АЛМАТЫДАҒЫ ТІРКЕЛГЕН ОРЫНДАР ---
 const almatyLocations = [
@@ -44,12 +43,11 @@ const fetchAirQuality = async (lat, lng, name) => {
 
 // --- Компоненттің басталуы ---
 
-const HomePage = ({ setActivePage, isMapLoaded, mapLoadError }) => {
+const HomePage = () => {
 
-    const [infoWindowData, setInfoWindowData] = useState(null);
     const [dashboardData, setDashboardData] = useState([]);
     const [isLoadingData, setIsLoadingData] = useState(false);
-    const mapRef = useRef(null);
+    const [isClient, setIsClient] = useState(false);
 
     // --- БАРЛЫҚ ТІРКЕЛГЕН ОРЫНДАР ҮШІН ДЕРЕКТЕРДІ ЖҮКТЕУ ФУНКЦИЯСЫ ---
     const fetchAllData = useCallback(async () => {
@@ -70,60 +68,14 @@ const HomePage = ({ setActivePage, isMapLoaded, mapLoadError }) => {
 
     // --- КОМПОНЕНТ ЖҮКТЕЛГЕНДЕ ДЕРЕКТЕРДІ ЖҮКТЕУДІ БАСТАУ ---
     useEffect(() => {
-        if (isMapLoaded) {
-            fetchAllData();
-        }
-    }, [isMapLoaded, fetchAllData]);
+        fetchAllData();
+    }, [fetchAllData]);
 
-    // --- КАРТАНЫҢ ӨЛШЕМІН АВТОМАТТЫ ТҮРДЕ ЖАҢАРТУ (САМОРАЙЗ) ---
     useEffect(() => {
-        if (!mapRef.current) return;
-
-        const handleResize = () => {
-            if (mapRef.current) {
-                // Google Maps API-ның resize() әдісін шақыру
-                window.google?.maps?.event?.trigger(mapRef.current, 'resize');
-            }
-        };
-
-        // Окно өлшемінің өзгеруін бақылау
-        window.addEventListener('resize', handleResize);
-
-        // ResizeObserver арқылы контейнер өлшемінің өзгеруін бақылау
-        const mapContainer = document.getElementById('home-map-container');
-        let resizeObserver = null;
-
-        if (mapContainer && window.ResizeObserver) {
-            resizeObserver = new ResizeObserver(() => {
-                handleResize();
-            });
-            resizeObserver.observe(mapContainer);
-        }
-
-        return () => {
-            window.removeEventListener('resize', handleResize);
-            if (resizeObserver && mapContainer) {
-                resizeObserver.unobserve(mapContainer);
-            }
-        };
-    }, [isMapLoaded]);
-
-    // --- КАРТАҒА БАСУДЫ ӨҢДЕУШІ ---
-    const onMapClick = useCallback(async (event) => {
-        const lat = event.latLng.lat();
-        const lng = event.latLng.lng();
-        const position = { lat, lng };
-
-        setInfoWindowData({ position, aqi: null, label: 'Жүктелуде...', color: 'bg-gray-400' });
-
-        try {
-            const data = await fetchAirQuality(lat, lng, "Арнайы басу");
-            setInfoWindowData({ ...data, position });
-        } catch (error) {
-            setInfoWindowData({ position, aqi: null, label: 'Деректерді жүктеу сәтсіз аяқталды.', color: 'bg-red-500' });
-            console.error("Деректерді жүктеудегі қате:", error);
-        }
+        setIsClient(true);
     }, []);
+
+    // Leaflet map handles its own resize logic inside the component
 
 
     // --- Визуализацияға арналған статистикалық жолақ компоненті ---
@@ -211,80 +163,6 @@ const HomePage = ({ setActivePage, isMapLoaded, mapLoadError }) => {
     };
 
 
-    // Картаны көрсету логикасы
-    const renderMap = () => {
-        if (mapLoadError) {
-            return <div className="p-8 text-red-600">Карта қатеге байланысты жүктелмеді: {mapLoadError.message}</div>;
-        }
-        if (!isMapLoaded) {
-            return <div className="p-8 text-gray-500 flex items-center justify-center w-full h-full">Google Карта қызметі жүктелуде...</div>;
-        }
-
-        return (
-            <GoogleMap
-                mapContainerStyle={{ width: '100%', height: '100%' }}
-                center={defaultCenter}
-                zoom={10}
-                options={{
-                    fullscreenControl: false,
-                    streetViewControl: false,
-                    mapId: "HTML_GEOPORTAL_MAP",
-                }}
-                onClick={onMapClick}
-                onLoad={(map) => {
-                    mapRef.current = map;
-                    // Карта жүктелгеннен кейін бірінші рет resize() шақыру
-                    setTimeout(() => {
-                        window.google?.maps?.event?.trigger(map, 'resize');
-                    }, 100);
-                }}
-                onUnmount={() => {
-                    mapRef.current = null;
-                }}
-            >
-                {/* Тіркелген орындарға арналған маркерлер */}
-                {dashboardData.map(data => (
-                    <div key={data.lat + data.lng}>
-                        <InfoWindow
-                            position={{ lat: parseFloat(data.lat), lng: parseFloat(data.lng) }}
-                            options={{ disableAutoPan: true }}
-                        >
-                            <div className="p-1 text-xs font-inter font-medium text-gray-900">
-                                {data.city}: <span className={`${data.color} text-white px-2 rounded-full`}>{data.aqi}</span>
-                            </div>
-                        </InfoWindow>
-                    </div>
-                ))}
-
-                {/* Басылған орынға арналған InfoWindow */}
-                {infoWindowData && (
-                    <InfoWindow
-                        position={infoWindowData.position}
-                        onCloseClick={() => setInfoWindowData(null)}
-                    >
-                        {/* Толық метрикаларды көрсететін Info Window мазмұны */}
-                        <div className="p-2 text-sm font-inter w-64">
-                            <h4 className="font-bold text-gray-900 mb-2 border-b pb-1">Қоршаған орта шолуы 🌍</h4>
-                            <div className="flex justify-between items-center py-1">
-                                <span className="font-semibold text-gray-700">АҚИ (АҚШ):</span>
-                                <span className={`${infoWindowData.color} text-white px-3 py-1 rounded-full text-xs font-bold`}>
-                                    {infoWindowData.aqi || '---'}
-                                </span>
-                            </div>
-                            <p className="text-xs text-gray-500 text-right mb-2">
-                                Мәртебесі: <span className="font-medium">{infoWindowData.label}</span>
-                            </p>
-                            <div className="flex justify-between items-center pt-2 mt-2 border-t border-gray-100 text-sm">
-                                <span className="font-semibold text-gray-700">Температура:</span>
-                                <span className="font-bold text-blue-600">{infoWindowData.tempC} °C</span>
-                            </div>
-                        </div>
-                    </InfoWindow>
-                )}
-            </GoogleMap>
-        );
-    };
-
     // Негізгі компонентті көрсету
     return (
         <div className="antialiased min-h-screen">
@@ -295,11 +173,25 @@ const HomePage = ({ setActivePage, isMapLoaded, mapLoadError }) => {
                 className="relative shadow-2xl overflow-hidden mb-8 mt-4"
                 style={{ height: '70vh', width: '100%', borderRadius: '0.5rem', overflow: 'hidden' }}
             >
-                {renderMap()}
+                {isClient ? (
+                    <Suspense
+                        fallback={(
+                            <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/70 backdrop-blur-sm text-gray-700 text-sm">
+                                Карта жүктелуде...
+                            </div>
+                        )}
+                    >
+                        <AirQualityMap />
+                    </Suspense>
+                ) : (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60 text-gray-700 text-sm">
+                        Карта дайындалуда...
+                    </div>
+                )}
 
                 {/* Карта үстіндегі нұсқаулықтар */}
                 <div className="absolute top-4 right-4 bg-white/70 backdrop-blur-sm p-3 rounded-lg shadow-lg text-sm text-gray-700 font-medium z-30">
-                    Жылдам тексеру үшін картаның кез келген жерін басыңыз.
+                    {t('map.quickHint', 'kk')}
                 </div>
             </section>
 
